@@ -1,3 +1,4 @@
+from typing import Optional
 from sqlmodel import Field
 from sqlalchemy import UniqueConstraint
 
@@ -14,3 +15,7 @@ class Player(BaseModelDB, table=True):
 
     name: str = Field(nullable=False)
     order: int = Field(nullable=False)
+
+    pawn_row: Optional[int] = Field(default=None, nullable=True)
+    pawn_col: Optional[int] = Field(default=None, nullable=True)
+    allowed_steps: int = Field(default=1, nullable=False)
