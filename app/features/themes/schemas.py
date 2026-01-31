@@ -62,6 +62,9 @@ class ThemeJoinOut(ThemeOut):
     category_color_hex: Optional[str]
     owner_username: str
     questions_count: int
+    score_avg: Optional[float] = None
+    score_count: int = 0
+    plays_count: int = 0
 
 class ThemeWithSignedUrlOut(ThemeOut):
     image_signed_url: Optional[str] = None
@@ -92,13 +95,8 @@ class QuestionStatOut(BaseModel):
 
 
 class ThemePreviewOut(ThemeJoinWithSignedUrlOut):
-    image_signed_url: Optional[str] = None
-    image_signed_expires_in: Optional[int] = None
-    plays_count: int = 0
     question_stats: List[QuestionStatOut] = []
     comments: ThemeCommentListOut = ThemeCommentListOut(items=[], total=0)
-    score_avg: float = 0.0
-    score_count: int = 0
 
 class ThemeUpdateWithQuestionsIn(ThemeUpdateIn):
     questions: List[QuestionUpdateIn]

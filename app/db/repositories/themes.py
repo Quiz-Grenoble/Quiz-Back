@@ -8,6 +8,7 @@ from app.db.models.users import User
 from app.db.models.categories import Category
 from app.db.models.colors import Color
 from app.db.models.questions import Question
+from app.db.models.comments import ThemeComment
 
 from app.features.themes.schemas import ThemeJoinOut
 
@@ -18,8 +19,8 @@ class ThemeRepository(BaseRepository[Theme]):
     # ---------- HELPERS ----------
 
     def _select_theme_out(self):
-        """Projection SQL standardisée pour construire ThemeOut."""
-        return (
+        """Projection SQL standardisée pour construire ThemeOut avec score moyen des commentaires."""
+        stmt = (
             select(
                 Theme.id,
                 Theme.name,
@@ -35,13 +36,16 @@ class ThemeRepository(BaseRepository[Theme]):
                 Theme.valid_admin,
                 Theme.created_at,
                 Theme.updated_at,
-                func.count(Question.id).label("questions_count"),
+                func.count(func.distinct(Question.id)).label("questions_count"),
+                func.avg(ThemeComment.score).label("score_avg"),
+                func.count(func.distinct(ThemeComment.id)).label("score_count"),
             )
             .select_from(Theme)
             .join(User, User.id == Theme.owner_id)
             .join(Category, Category.id == Theme.category_id, isouter=True)
             .join(Color, Color.id == Category.color_id, isouter=True)
             .outerjoin(Question, Question.theme_id == Theme.id)
+            .outerjoin(ThemeComment, ThemeComment.theme_id == Theme.id)
             .group_by(
                 Theme.id,
                 Theme.name,
@@ -59,6 +63,7 @@ class ThemeRepository(BaseRepository[Theme]):
                 Theme.updated_at,
             )
         )
+        return stmt
 
     def _rows_to_theme_out(self, rows) -> list[ThemeJoinOut]:
         return [ThemeJoinOut(**dict(r._mapping)) for r in rows]

@@ -540,32 +540,28 @@ class ThemeService:
 
         # 6) commentaires + stats agrégées
         comments_out = None
-        score_avg = 0.0
-        score_count = 0
         if self.comment_service:
             try:
-                comments_out, score_avg, score_count = self.comment_service.list_for_theme_with_stats(
+                comments_out, _, _ = self.comment_service.list_for_theme_with_stats(
                     theme_id,
                     offset=comments_offset,
                     limit=comments_limit,
                 )
             except Exception:
                 comments_out = None
-                score_avg = 0.0
-                score_count = 0
 
         # 7) construire sortie
-
+        # On met à jour plays_count avec la valeur calculée
+        join_data = join.model_dump()
+        join_data["plays_count"] = plays
+        
         base = ThemePreviewOut(
-            **join.model_dump(),  # type: ignore
+            **join_data,  # type: ignore
             image_signed_url=image_signed_url,
             image_signed_expires_in=image_signed_expires,
-            plays_count=plays,
             question_stats=[QuestionStatOut(**qs) for qs in q_stats],
             comments=(comments_out if comments_out else None)
             or ThemeCommentListOut(items=[], total=0),
-            score_avg=score_avg,
-            score_count=score_count,
         )
 
         return base
