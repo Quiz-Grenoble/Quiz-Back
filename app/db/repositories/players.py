@@ -67,3 +67,24 @@ class PlayerRepository(BaseRepository[Player]):
         )
         count = self.session.exec(stmt).one()
         return bool(count and count > 0)
+
+    def update_pawn_position(
+        self, player: Player, row: Optional[int], col: Optional[int], *, commit: bool = True
+    ) -> Player:
+        player.pawn_row = row
+        player.pawn_col = col
+        self.session.add(player)
+        if commit:
+            self.session.commit()
+            self.session.refresh(player)
+        return player
+
+    def update_allowed_steps(
+        self, player: Player, allowed_steps: int, *, commit: bool = True
+    ) -> Player:
+        player.allowed_steps = allowed_steps
+        self.session.add(player)
+        if commit:
+            self.session.commit()
+            self.session.refresh(player)
+        return player

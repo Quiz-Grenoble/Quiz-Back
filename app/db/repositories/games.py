@@ -39,6 +39,7 @@ class GameRepository(BaseRepository[Game]):
                 Game.rows_number,
                 Game.columns_number,
                 Game.finished,
+                Game.with_pawns,
                 Player.id.label("player_id"),
                 Player.name.label("player_name"),
                 Player.order.label("player_order"),

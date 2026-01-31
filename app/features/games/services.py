@@ -130,6 +130,119 @@ class GameService:
                 break
         return ids
 
+    # -----------------------------------
+    # Helpers: pawn movement (with_pawns mode)
+    # -----------------------------------
+    def _is_edge_cell(self, row: int, col: int, rows: int, cols: int) -> bool:
+        """Check if cell is on the edge of the grid."""
+        return row == 0 or row == rows - 1 or col == 0 or col == cols - 1
+
+    def _get_valid_pawn_moves(
+        self,
+        player_row: Optional[int],
+        player_col: Optional[int],
+        rows: int,
+        cols: int,
+        answered_cells: set,
+        other_pawn_positions: set,
+        allowed_steps: int = 1,
+    ) -> set:
+        """
+        Compute valid cells for a pawn to move to (queen-like movement with fallbacks).
+        - If pawn is off-grid (None, None): can move to any unanswered edge cell
+        - If pawn is on-grid: move in straight lines (8 directions like a chess queen)
+          - Moving to an answered cell or cell with pawn costs 0 steps (free traversal)
+          - Moving to an unanswered cell costs 1 step
+          - Can only stop on unanswered cells without pawns
+        - Fallback 1: if no moves, allow any unanswered edge cell
+        - Fallback 2: if no edge cells, allow any unanswered cell on the board
+        """
+        valid = set()
+
+        if player_row is None or player_col is None:
+            for r in range(rows):
+                for c in range(cols):
+                    if self._is_edge_cell(r, c, rows, cols):
+                        if (r, c) not in answered_cells and (r, c) not in other_pawn_positions:
+                            valid.add((r, c))
+        else:
+            directions = [(-1, -1), (-1, 0), (-1, 1), (0, -1), (0, 1), (1, -1), (1, 0), (1, 1)]
+
+            for dr, dc in directions:
+                steps_used = 0
+                nr, nc = player_row + dr, player_col + dc
+
+                while 0 <= nr < rows and 0 <= nc < cols:
+                    has_other_pawn = (nr, nc) in other_pawn_positions
+                    is_answered = (nr, nc) in answered_cells
+
+                    is_free = is_answered or has_other_pawn
+                    step_cost = 0 if is_free else 1
+                    steps_used += step_cost
+
+                    if steps_used > allowed_steps:
+                        break
+
+                    if not is_free:
+                        valid.add((nr, nc))
+
+                    nr += dr
+                    nc += dc
+
+            if not valid:
+                for r in range(rows):
+                    for c in range(cols):
+                        if self._is_edge_cell(r, c, rows, cols):
+                            if (r, c) not in answered_cells and (r, c) not in other_pawn_positions:
+                                valid.add((r, c))
+
+            if not valid:
+                for r in range(rows):
+                    for c in range(cols):
+                        if (r, c) not in answered_cells and (r, c) not in other_pawn_positions:
+                            valid.add((r, c))
+
+        return valid
+
+    def _validate_pawn_move(
+        self,
+        game,
+        player,
+        target_row: int,
+        target_col: int,
+        grid_cells,
+    ) -> None:
+        """
+        Validate that a pawn move is legal.
+        Raises ConflictError if invalid.
+        """
+        if not game.with_pawns:
+            return
+
+        answered_cells = set()
+        for cell in grid_cells:
+            if cell.round_id is not None:
+                answered_cells.add((cell.row, cell.column))
+
+        players = self.players.list_by_game(game.id)
+        other_pawn_positions = set()
+        for p in players:
+            if p.id != player.id and p.pawn_row is not None and p.pawn_col is not None:
+                other_pawn_positions.add((p.pawn_row, p.pawn_col))
+
+        valid_moves = self._get_valid_pawn_moves(
+            player.pawn_row,
+            player.pawn_col,
+            game.rows_number,
+            game.columns_number,
+            answered_cells,
+            other_pawn_positions,
+            player.allowed_steps,
+        )
+
+        if (target_row, target_col) not in valid_moves:
+            raise ConflictError("INVALID_PAWN_MOVE")
+
     # ---------------------------------------------------------------------
     # Catalogues jokers / bonus
     # ---------------------------------------------------------------------
@@ -161,6 +274,7 @@ class GameService:
                     "rows_number": r.rows_number,
                     "columns_number": r.columns_number,
                     "finished": r.finished,
+                    "with_pawns": r.with_pawns,
                     "players": [],
                 }
 
@@ -209,6 +323,7 @@ class GameService:
             rows_number=payload.rows_number,
             columns_number=payload.columns_number,
             finished=False,
+            with_pawns=payload.with_pawns,
         )
 
         # Players
@@ -449,6 +564,7 @@ class GameService:
                 "rows_number": game.rows_number,
                 "columns_number": game.columns_number,
                 "finished": game.finished,
+                "with_pawns": game.with_pawns,
                 "owner_id": game.owner_id
             },
             "players": [
@@ -458,6 +574,9 @@ class GameService:
                     "order": p.order,
                     "theme_id": p.theme_id,
                     "color_id": p.color_id,
+                    "pawn_row": p.pawn_row,
+                    "pawn_col": p.pawn_col,
+                    "allowed_steps": p.allowed_steps,
                 }
                 for p in players
             ],
@@ -920,6 +1039,26 @@ class GameService:
         if round_ctx.game_id != game.id:
             raise LookupError("ROUND_NOT_IN_GAME")
 
+        # Validate pawn move if with_pawns mode is enabled
+        if game.with_pawns:
+            player = self.players.get(round_ctx.player_id)
+            if not player:
+                raise LookupError("PLAYER_NOT_FOUND")
+
+            all_grid_cells = self.grids.list_by_game(game.id)
+            self._validate_pawn_move(game, player, grid.row, grid.column, all_grid_cells)
+
+            # Update pawn position
+            self.players.update_pawn_position(player, grid.row, grid.column, commit=False)
+
+            # Update allowed_steps for next turn based on answer result
+            if payload.correct_answer and not payload.skip_answer:
+                question_points = self.grids.get_question_points(payload.grid_id)
+                new_allowed_steps = question_points if question_points and question_points > 0 else 1
+            else:
+                new_allowed_steps = 1
+            self.players.update_allowed_steps(player, new_allowed_steps, commit=False)
+
         updated = self.grids.update(
             grid,
             commit=True,
@@ -1196,6 +1335,7 @@ class GameService:
                 "rows_number": game.rows_number,
                 "columns_number": game.columns_number,
                 "finished": game.finished,
+                "with_pawns": game.with_pawns,
                 "owner_id": game.owner_id,
             },
             "players": players_out,

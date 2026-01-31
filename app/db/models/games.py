@@ -13,3 +13,5 @@ class Game(BaseModelDB, table=True):
     rows_number: int = Field(nullable=False)
     columns_number: int = Field(nullable=False)
     finished: bool = Field(default=False, nullable=False)
+
+    with_pawns: bool = Field(default=False, nullable=False)

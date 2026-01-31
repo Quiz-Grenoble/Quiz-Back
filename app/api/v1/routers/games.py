@@ -123,6 +123,7 @@ def create_game(
             rows_number=game.rows_number,
             columns_number=game.columns_number,
             finished=game.finished,
+            with_pawns=game.with_pawns,
         )
     except ConflictError:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Game URL already exists")

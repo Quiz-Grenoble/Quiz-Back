@@ -44,6 +44,8 @@ class GameCreateIn(BaseModel):
     joker_ids: Optional[List[int]] = None
     bonus_ids: Optional[List[int]] = None
 
+    with_pawns: bool = False
+
 
 class GameCreateOut(BaseModel):
     id: int
@@ -52,6 +54,7 @@ class GameCreateOut(BaseModel):
     rows_number: int
     columns_number: int
     finished: bool
+    with_pawns: bool
 
 
 # -----------------------------
@@ -83,6 +86,7 @@ class GameWithPlayersOut(BaseModel):
     rows_number: int
     columns_number: int
     finished: bool
+    with_pawns: bool
     players: List[PlayerInGameOut]
 
 
@@ -138,6 +142,7 @@ class GameMetaOut(BaseModel):
     rows_number: int
     columns_number: int
     finished: bool
+    with_pawns: bool
     owner_id: int
 
 class LastRoundDeltaOut(BaseModel):
