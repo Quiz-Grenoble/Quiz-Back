@@ -868,6 +868,9 @@ class GameService:
                     delta[u.target_player_id] += points
                     add_joker_delta(uid, u.target_player_id, +points)
                 else:
+                    # incorrect => l'appelant ET l'ami ciblé perdent des points
+                    delta[answering_player_id] -= points
+                    add_joker_delta(uid, answering_player_id, -points)
                     delta[u.target_player_id] -= points
                     # ✅ bonus sniper/victime : si incorrect, l'ami perd à cause du joueur
                     bonus_inflict_loss(answering_player_id, u.target_player_id, points)

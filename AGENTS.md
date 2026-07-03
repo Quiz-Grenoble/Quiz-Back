@@ -26,6 +26,33 @@ ruff check app/
 ruff format app/
 ```
 
+## Dev Launch (Recommended)
+
+Use Docker in dev to mirror prod networking between API and MinIO.
+
+```bash
+# 1) Start API + MinIO (+ init bucket/users)
+docker compose up --build -d
+
+# 2) Check services
+docker compose ps
+docker compose logs api --tail=120
+
+# 3) Quick health checks
+# API docs (FastAPI default path)
+curl http://localhost:8080/openapi.json
+# MinIO health
+curl http://localhost:9000/minio/health/live
+
+# 4) Stop stack
+docker compose down
+```
+
+Notes:
+- If port `8080` is already used by another container/service, free it first.
+- API is exposed on `http://localhost:8080`.
+- MinIO API/Console are exposed on `http://localhost:9000` / `http://localhost:9001`.
+
 ## Architecture
 
 ```
