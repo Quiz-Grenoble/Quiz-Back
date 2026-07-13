@@ -223,6 +223,8 @@ def answer(
             round_id=grid.round_id,
             correct_answer=grid.correct_answer,
             skip_answer=grid.skip_answer,
+            player_matching_pairs=getattr(grid, "player_matching_pairs", None),
+            expected_matching_pairs=getattr(grid, "expected_matching_pairs", None),
             next_round=(
                 RoundCreateOut(id=next_round.id, player_id=next_round.player_id, round_number=next_round.round_number)
                 if next_round

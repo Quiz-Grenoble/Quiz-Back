@@ -7,6 +7,8 @@ from app.db.repositories.categories import CategoryRepository
 from app.db.repositories.questions import QuestionRepository
 from app.db.repositories.grids import GridRepository
 from app.db.repositories.players import PlayerRepository
+from app.db.repositories.matching_elements import MatchingElementRepository
+from app.db.repositories.matching_correct_pairs import MatchingCorrectPairRepository
 
 from app.db.models.themes import Theme
 from app.db.models.categories import Category
@@ -18,7 +20,11 @@ from app.features.themes.schemas import (
     ThemeJoinWithSignedUrlOut, ThemeDetailJoinWithSignedUrlOut,
     ThemePreviewOut, QuestionStatOut
 )
-from app.features.questions.schemas import QuestionJoinWithSignedUrlOut
+from app.features.questions.schemas import (
+    QuestionJoinWithSignedUrlOut,
+    MatchingElementWithSignedUrlOut,
+    MatchingCorrectPairOut,
+)
 from app.features.comments.schemas import ThemeCommentListOut
 
 from app.features.media.services import ImageService, AudioService, VideoService
@@ -47,6 +53,8 @@ class ThemeService:
         question_repo: QuestionRepository,
         grid_repo: GridRepository,
         player_repo: PlayerRepository,
+        matching_element_repo: MatchingElementRepository,
+        matching_correct_pair_repo: MatchingCorrectPairRepository,
         comment_service: Optional[CommentService] = None,
     ):
         self.repo = repo
@@ -58,6 +66,8 @@ class ThemeService:
         self.question_repo = question_repo
         self.grid_repo = grid_repo
         self.player_repo = player_repo
+        self.matching_element_repo = matching_element_repo
+        self.matching_correct_pair_repo = matching_correct_pair_repo
         self.comment_service = comment_service
 
     # -------- Helpers permissions --------
@@ -301,18 +311,21 @@ class ThemeService:
         # --- 2) construire les nouvelles entités Question ---
         new_questions: List[Question] = []
         for idx, q_in in enumerate(payload.questions):
-            # q_in est un QuestionUpdateIn (tous champs optionnels) => on impose des minima
-            if not q_in.question or not q_in.answer:
-                raise ValueError(
-                    f"Each question must provide 'question' and 'answer'. Invalid item at index {idx}."
-                )
+            # Validation: question requise pour tous les types
+            if not q_in.question:
+                raise ValueError(f"Each question must provide 'question'. Invalid item at index {idx}.")
+            
+            # Validation: answer requise seulement pour les questions classic
+            if q_in.question_type != "matching" and not q_in.answer:
+                raise ValueError(f"Classic questions must provide 'answer'. Invalid item at index {idx}.")
 
             new_questions.append(
                 Question(
                     theme_id=theme_id,
                     question=q_in.question,
-                    answer=q_in.answer,
+                    answer=(q_in.answer if q_in.answer else ""),
                     points=(q_in.points if q_in.points is not None else 1),
+                    question_type=(q_in.question_type if q_in.question_type else "classic"),
                     question_image_id=q_in.question_image_id,
                     answer_image_id=q_in.answer_image_id,
                     question_audio_id=q_in.question_audio_id,
@@ -324,17 +337,52 @@ class ThemeService:
 
         # --- 3) transaction globale ---
         try:
-            # 3.1 supprimer toutes les questions existantes
+            # 3.1 supprimer toutes les questions existantes (et cascade delete les matching elements/pairs)
             self.question_repo.delete_by_theme(theme_id, commit=False)
 
             # 3.2 insérer les nouvelles questions
             if new_questions:
                 self.question_repo.create_many(new_questions, commit=False)
+                session.flush()  # Force l'attribution des IDs
+                
+                # 3.3 Pour chaque question matching, créer les éléments et paires
+                for idx, q_in in enumerate(payload.questions):
+                    if q_in.question_type == "matching" and q_in.matching_elements and q_in.matching_correct_pairs:
+                        question_id = new_questions[idx].id
+                        
+                        # Créer les matching elements
+                        from app.db.models.matching_elements import MatchingElement
+                        elements = [
+                            MatchingElement(
+                                question_id=question_id,
+                                list_index=elem.list_index,
+                                position=elem.position,
+                                text=elem.text,
+                                media_id=elem.media_id,
+                                media_type=elem.media_type,
+                            )
+                            for elem in q_in.matching_elements
+                        ]
+                        self.matching_element_repo.create_many(elements, commit=False)
+                        
+                        # Créer les matching correct pairs
+                        from app.db.models.matching_correct_pairs import MatchingCorrectPair
+                        pairs = [
+                            MatchingCorrectPair(
+                                question_id=question_id,
+                                list_index_1=pair.list_index_1,
+                                element_position_1=pair.element_position_1,
+                                list_index_2=pair.list_index_2,
+                                element_position_2=pair.element_position_2,
+                            )
+                            for pair in q_in.matching_correct_pairs
+                        ]
+                        self.matching_correct_pair_repo.create_many(pairs, commit=False)
 
-            # 3.3 update du thème
+            # 3.4 update du thème
             self.repo.update(theme, commit=False, **changes)
 
-            # 3.4 commit unique
+            # 3.5 commit unique
             session.commit()
             session.refresh(theme)
             return self.get_one_detail(theme_id, user_ctx=(user_id, is_admin), with_signed_url=True)
@@ -412,6 +460,62 @@ class ThemeService:
                 d = self.video_svc.signed_get(str(q.answer_video_id))
                 av_url, av_exp = d.get("url"), d.get("expires_in")
 
+            # Matching elements with signed URLs (if matching question type)
+            matching_elements_out = []
+            matching_correct_pairs_out = []
+            
+            if q.question_type == "matching":
+                # Load matching elements
+                elements = self.matching_element_repo.list_by_question(q.id)
+                
+                for elem in elements:
+                    media_url = media_exp = None
+                    
+                    if allow_sign and elem.media_id and elem.media_type:
+                        if elem.media_type == "image":
+                            d = self.image_svc.signed_get(str(elem.media_id))
+                        elif elem.media_type == "audio":
+                            d = self.audio_svc.signed_get(str(elem.media_id))
+                        elif elem.media_type == "video":
+                            d = self.video_svc.signed_get(str(elem.media_id))
+                        else:
+                            d = {}
+                        
+                        media_url = d.get("url")
+                        media_exp = d.get("expires_in")
+                    
+                    matching_elements_out.append(
+                        MatchingElementWithSignedUrlOut(
+                            id=elem.id,
+                            question_id=elem.question_id,
+                            list_index=elem.list_index,
+                            position=elem.position,
+                            text=elem.text,
+                            media_id=elem.media_id,
+                            media_type=elem.media_type,
+                            media_signed_url=media_url,
+                            media_signed_expires_in=media_exp,
+                            created_at=getattr(elem, "created_at", None),
+                            updated_at=getattr(elem, "updated_at", None),
+                        )
+                    )
+                
+                # Load matching correct pairs
+                pairs = self.matching_correct_pair_repo.list_by_question(q.id)
+                for pair in pairs:
+                    matching_correct_pairs_out.append(
+                        MatchingCorrectPairOut(
+                            id=pair.id,
+                            question_id=pair.question_id,
+                            list_index_1=pair.list_index_1,
+                            element_position_1=pair.element_position_1,
+                            list_index_2=pair.list_index_2,
+                            element_position_2=pair.element_position_2,
+                            created_at=getattr(pair, "created_at", None),
+                            updated_at=getattr(pair, "updated_at", None),
+                        )
+                    )
+
             # stats
             pos = neg = cancelled = 0
             if self.grid_repo:
@@ -431,6 +535,9 @@ class ThemeService:
                     question=q.question,
                     answer=q.answer,
                     points=q.points,
+                    
+                    question_type=q.question_type,
+                    
                     question_image_id=q.question_image_id,
                     answer_image_id=q.answer_image_id,
                     question_audio_id=q.question_audio_id,
@@ -452,6 +559,9 @@ class ThemeService:
                     question_video_signed_expires_in=qv_exp,
                     answer_video_signed_url=av_url,
                     answer_video_signed_expires_in=av_exp,
+                    
+                    matching_elements=matching_elements_out,
+                    matching_correct_pairs=matching_correct_pairs_out,
 
                     created_at=getattr(q, "created_at", None),
                     updated_at=getattr(q, "updated_at", None),

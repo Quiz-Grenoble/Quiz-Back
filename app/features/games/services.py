@@ -1042,6 +1042,54 @@ class GameService:
         if round_ctx.game_id != game.id:
             raise LookupError("ROUND_NOT_IN_GAME")
 
+        # For matching questions, validate player pairs server-side
+        correct_answer = payload.correct_answer
+        player_pairs_out = None
+        expected_pairs_out = None
+
+        question = self.questions.get(grid.question_id)
+        if question and question.question_type == "matching":
+            if not payload.player_matching_pairs:
+                raise ValueError("player_matching_pairs required for matching questions")
+
+            # Get correct pairs from question
+            from app.db.repositories.matching_correct_pairs import MatchingCorrectPairRepository
+            pairs_repo = MatchingCorrectPairRepository(self.session)
+            correct_pairs = pairs_repo.list_by_question(question.id)
+
+            # Normalize pairs for comparison (both directions)
+            def normalize_pair(p):
+                return frozenset([
+                    (p.list_index_1, p.element_position_1, p.list_index_2, p.element_position_2),
+                    (p.list_index_2, p.element_position_2, p.list_index_1, p.element_position_1)
+                ])
+
+            correct_set = {normalize_pair(cp) for cp in correct_pairs}
+            player_set = {normalize_pair(pp) for pp in payload.player_matching_pairs}
+
+            # Answer is correct if sets match exactly
+            correct_answer = correct_set == player_set
+
+            # Build output data for frontend
+            player_pairs_out = [
+                {
+                    "list_index_1": p.list_index_1,
+                    "element_position_1": p.element_position_1,
+                    "list_index_2": p.list_index_2,
+                    "element_position_2": p.element_position_2,
+                }
+                for p in payload.player_matching_pairs
+            ]
+            expected_pairs_out = [
+                {
+                    "list_index_1": p.list_index_1,
+                    "element_position_1": p.element_position_1,
+                    "list_index_2": p.list_index_2,
+                    "element_position_2": p.element_position_2,
+                }
+                for p in correct_pairs
+            ]
+
         # Validate pawn move if with_pawns mode is enabled
         if game.with_pawns:
             player = self.players.get(round_ctx.player_id)
@@ -1055,7 +1103,7 @@ class GameService:
             self.players.update_pawn_position(player, grid.row, grid.column, commit=False)
 
             # Update allowed_steps for next turn based on answer result
-            if payload.correct_answer and not payload.skip_answer:
+            if correct_answer and not payload.skip_answer:
                 question_points = self.grids.get_question_points(payload.grid_id)
                 new_allowed_steps = question_points if question_points and question_points > 0 else 1
             else:
@@ -1066,9 +1114,14 @@ class GameService:
             grid,
             commit=True,
             round_id=payload.round_id,
-            correct_answer=payload.correct_answer,
+            correct_answer=correct_answer,
             skip_answer=payload.skip_answer,
         )
+
+        # Attach matching validation results to grid object for response
+        if player_pairs_out is not None:
+            updated.player_matching_pairs = player_pairs_out
+            updated.expected_matching_pairs = expected_pairs_out
 
         next_round = None
         if auto_next_round:

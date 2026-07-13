@@ -44,6 +44,8 @@ from app.features.themes.services import ThemeService, CategoryService
 from app.db.repositories.categories import CategoryRepository
 
 from app.db.repositories.questions import QuestionRepository
+from app.db.repositories.matching_elements import MatchingElementRepository
+from app.db.repositories.matching_correct_pairs import MatchingCorrectPairRepository
 from app.features.questions.services import QuestionService
 from app.db.repositories.comments import ThemeCommentRepository
 from app.features.comments.services import CommentService
@@ -114,6 +116,12 @@ def get_video_repository(session: Session = Depends(get_session)) -> VideoReposi
 
 def get_question_repository(session: Session = Depends(get_session)) -> QuestionRepository:
     return QuestionRepository(session)
+
+def get_matching_element_repository(session: Session = Depends(get_session)) -> MatchingElementRepository:
+    return MatchingElementRepository(session)
+
+def get_matching_correct_pair_repository(session: Session = Depends(get_session)) -> MatchingCorrectPairRepository:
+    return MatchingCorrectPairRepository(session)
 
 def get_game_repository(session: Session = Depends(get_session)) -> GameRepository:
     return GameRepository(session)
@@ -193,6 +201,8 @@ def get_question_service(
     audio_svc: AudioService = Depends(get_audio_service),
     video_svc: VideoService = Depends(get_video_service),
     grid_repo: GridRepository = Depends(get_grid_repository),
+    matching_element_repo: MatchingElementRepository = Depends(get_matching_element_repository),
+    matching_correct_pair_repo: MatchingCorrectPairRepository = Depends(get_matching_correct_pair_repository),
 ) -> QuestionService:
     return QuestionService(
         repo=question_repo,
@@ -201,6 +211,8 @@ def get_question_service(
         audio_svc=audio_svc,
         video_svc=video_svc,
         grid_repo=grid_repo,
+        matching_element_repo=matching_element_repo,
+        matching_correct_pair_repo=matching_correct_pair_repo,
     )
 
 
@@ -233,6 +245,8 @@ def get_theme_service(
     question_repo: QuestionRepository = Depends(get_question_repository),
     grid_repo: GridRepository = Depends(get_grid_repository),
     player_repo: PlayerRepository = Depends(get_player_repository),
+    matching_element_repo: MatchingElementRepository = Depends(get_matching_element_repository),
+    matching_correct_pair_repo: MatchingCorrectPairRepository = Depends(get_matching_correct_pair_repository),
     comment_svc: CommentService = Depends(get_comment_service),
 ) -> ThemeService:
     # ✅ toutes les dépendances injectées via la signature (FastAPI les résout)
@@ -245,6 +259,8 @@ def get_theme_service(
         question_repo=question_repo,
         grid_repo=grid_repo,
         player_repo=player_repo,
+        matching_element_repo=matching_element_repo,
+        matching_correct_pair_repo=matching_correct_pair_repo,
         comment_service=comment_svc,
     )
 

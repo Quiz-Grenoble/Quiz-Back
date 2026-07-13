@@ -3,13 +3,18 @@ from typing import Optional, Sequence, Tuple, Any, Dict
 from app.db.repositories.questions import QuestionRepository
 from app.db.repositories.themes import ThemeRepository
 from app.db.repositories.grids import GridRepository
+from app.db.repositories.matching_elements import MatchingElementRepository
+from app.db.repositories.matching_correct_pairs import MatchingCorrectPairRepository
 
 from app.db.models.questions import Question
+from app.db.models.matching_elements import MatchingElement
+from app.db.models.matching_correct_pairs import MatchingCorrectPair
 
 from app.features.questions.schemas import (
     QuestionCreateIn,
     QuestionUpdateIn,
     QuestionJoinWithSignedUrlOut,
+    MatchingElementWithSignedUrlOut,
 )
 
 from app.features.media.services import ImageService, AudioService, VideoService
@@ -28,6 +33,8 @@ class QuestionService:
         audio_svc: AudioService,
         video_svc: VideoService,
         grid_repo: GridRepository,
+        matching_element_repo: MatchingElementRepository,
+        matching_correct_pair_repo: MatchingCorrectPairRepository,
     ):
         self.repo = repo
         self.theme_repo = theme_repo
@@ -35,9 +42,56 @@ class QuestionService:
         self.audio_svc = audio_svc
         self.video_svc = video_svc
         self.grid_repo = grid_repo
+        self.matching_element_repo = matching_element_repo
+        self.matching_correct_pair_repo = matching_correct_pair_repo
 
     def create(self, payload: QuestionCreateIn) -> Question:
-        return self.repo.create(**payload.model_dump())
+        """
+        Crée une question (classic ou matching).
+        Pour les questions matching, crée aussi les éléments et paires associés.
+        """
+        # Extraire les champs matching avant de créer la question
+        matching_elements_data = payload.matching_elements
+        matching_correct_pairs_data = payload.matching_correct_pairs
+        
+        # Créer la question (exclure les champs matching du dump)
+        question_data = payload.model_dump(exclude={"matching_elements", "matching_correct_pairs"})
+        question = self.repo.create(**question_data, commit=False)
+        
+        # Si question de type matching, créer les éléments et paires
+        if payload.question_type == "matching" and matching_elements_data and matching_correct_pairs_data:
+            # Créer les éléments
+            elements = [
+                MatchingElement(
+                    question_id=question.id,
+                    list_index=elem.list_index,
+                    position=elem.position,
+                    text=elem.text,
+                    media_id=elem.media_id,
+                    media_type=elem.media_type,
+                )
+                for elem in matching_elements_data
+            ]
+            self.matching_element_repo.create_many(elements, commit=False)
+            
+            # Créer les paires correctes
+            pairs = [
+                MatchingCorrectPair(
+                    question_id=question.id,
+                    list_index_1=pair.list_index_1,
+                    element_position_1=pair.element_position_1,
+                    list_index_2=pair.list_index_2,
+                    element_position_2=pair.element_position_2,
+                )
+                for pair in matching_correct_pairs_data
+            ]
+            self.matching_correct_pair_repo.create_many(pairs, commit=False)
+        
+        # Commit toutes les opérations
+        self.repo.session.commit()
+        self.repo.session.refresh(question)
+        
+        return question
 
     def get_one(self, question_id: int) -> Optional[Question]:
         return self.repo.get(question_id)
@@ -53,11 +107,65 @@ class QuestionService:
         return self.repo.list_by_theme(theme_id, offset=offset, limit=limit, newest_first=newest_first)
 
     def update(self, question_id: int, payload: QuestionUpdateIn) -> Question:
+        """
+        Met à jour une question.
+        Si les champs matching sont fournis, remplace les éléments/paires existants.
+        """
         q = self.repo.get(question_id)
         if not q:
             raise LookupError("Question not found.")
-        changes = payload.model_dump(exclude_unset=True)
-        return self.repo.update(q, **changes)
+        
+        # Extraire les données matching
+        matching_elements_data = payload.matching_elements
+        matching_correct_pairs_data = payload.matching_correct_pairs
+        
+        # Mettre à jour les champs de base (exclure matching)
+        changes = payload.model_dump(exclude_unset=True, exclude={"matching_elements", "matching_correct_pairs"})
+        q = self.repo.update(q, **changes, commit=False)
+        
+        # Si les données matching sont fournies, remplacer les éléments/paires existants
+        if matching_elements_data is not None:
+            # Supprimer les anciens éléments
+            self.matching_element_repo.delete_by_question(question_id, commit=False)
+            
+            # Créer les nouveaux éléments
+            if matching_elements_data:
+                elements = [
+                    MatchingElement(
+                        question_id=question_id,
+                        list_index=elem.list_index,
+                        position=elem.position,
+                        text=elem.text,
+                        media_id=elem.media_id,
+                        media_type=elem.media_type,
+                    )
+                    for elem in matching_elements_data
+                ]
+                self.matching_element_repo.create_many(elements, commit=False)
+        
+        if matching_correct_pairs_data is not None:
+            # Supprimer les anciennes paires
+            self.matching_correct_pair_repo.delete_by_question(question_id, commit=False)
+            
+            # Créer les nouvelles paires
+            if matching_correct_pairs_data:
+                pairs = [
+                    MatchingCorrectPair(
+                        question_id=question_id,
+                        list_index_1=pair.list_index_1,
+                        element_position_1=pair.element_position_1,
+                        list_index_2=pair.list_index_2,
+                        element_position_2=pair.element_position_2,
+                    )
+                    for pair in matching_correct_pairs_data
+                ]
+                self.matching_correct_pair_repo.create_many(pairs, commit=False)
+        
+        # Commit toutes les opérations
+        self.repo.session.commit()
+        self.repo.session.refresh(q)
+        
+        return q
 
     def delete(self, question_id: int) -> None:
         q = self.repo.get(question_id)
@@ -151,7 +259,65 @@ class QuestionService:
             d = self.video_svc.signed_get(str(q.answer_video_id))
             av_url, av_exp = d.get("url"), d.get("expires_in")
 
-        # 5) statistiques d'usage (si disponible)
+        # 5) Récupérer les éléments et paires matching (si question de type matching)
+        matching_elements_out = []
+        matching_correct_pairs_out = []
+        
+        if q.question_type == "matching":
+            # Récupérer les éléments
+            elements = self.matching_element_repo.list_by_question(question_id)
+            
+            # Pour chaque élément, générer signed URL si média présent
+            for elem in elements:
+                media_url = media_exp = None
+                
+                if allow_sign and elem.media_id and elem.media_type:
+                    if elem.media_type == "image":
+                        d = self.image_svc.signed_get(str(elem.media_id))
+                    elif elem.media_type == "audio":
+                        d = self.audio_svc.signed_get(str(elem.media_id))
+                    elif elem.media_type == "video":
+                        d = self.video_svc.signed_get(str(elem.media_id))
+                    else:
+                        d = {}
+                    
+                    media_url = d.get("url")
+                    media_exp = d.get("expires_in")
+                
+                matching_elements_out.append(
+                    MatchingElementWithSignedUrlOut(
+                        id=elem.id,
+                        question_id=elem.question_id,
+                        list_index=elem.list_index,
+                        position=elem.position,
+                        text=elem.text,
+                        media_id=elem.media_id,
+                        media_type=elem.media_type,
+                        media_signed_url=media_url,
+                        media_signed_expires_in=media_exp,
+                        created_at=getattr(elem, "created_at", None),
+                        updated_at=getattr(elem, "updated_at", None),
+                    )
+                )
+            
+            # Récupérer les paires correctes
+            from app.features.questions.schemas import MatchingCorrectPairOut
+            pairs = self.matching_correct_pair_repo.list_by_question(question_id)
+            matching_correct_pairs_out = [
+                MatchingCorrectPairOut(
+                    id=pair.id,
+                    question_id=pair.question_id,
+                    list_index_1=pair.list_index_1,
+                    element_position_1=pair.element_position_1,
+                    list_index_2=pair.list_index_2,
+                    element_position_2=pair.element_position_2,
+                    created_at=getattr(pair, "created_at", None),
+                    updated_at=getattr(pair, "updated_at", None),
+                )
+                for pair in pairs
+            ]
+
+        # 6) statistiques d'usage (si disponible)
         pos = neg = cancelled = 0
         if self.grid_repo:
             try:
@@ -169,6 +335,7 @@ class QuestionService:
             question=q.question,
             answer=q.answer,
             points=q.points,
+            question_type=q.question_type,
 
             question_image_id=q.question_image_id,
             answer_image_id=q.answer_image_id,
@@ -191,6 +358,9 @@ class QuestionService:
             question_video_signed_expires_in=qv_exp,
             answer_video_signed_url=av_url,
             answer_video_signed_expires_in=av_exp,
+
+            matching_elements=matching_elements_out,
+            matching_correct_pairs=matching_correct_pairs_out,
 
             created_at=getattr(q, "created_at", None),
             updated_at=getattr(q, "updated_at", None),

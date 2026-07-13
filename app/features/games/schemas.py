@@ -181,16 +181,30 @@ class RoundCreateOut(BaseModel):
 # Answers (sans jokers)
 # -----------------------------
 
+class PlayerMatchingPair(BaseModel):
+    """A pair created by the player in a matching question."""
+    list_index_1: int = Field(ge=0)
+    element_position_1: int = Field(ge=0)
+    list_index_2: int = Field(ge=0)
+    element_position_2: int = Field(ge=0)
+
+
 class AnswerCreateIn(BaseModel):
     """
     Enregistrer une réponse sur une case de grille.
     - round_id: le tour en cours
     - grid_id: la case ciblée
+    - For classic questions: correct_answer is set by the player
+    - For matching questions: player_matching_pairs contains the answer, 
+      and correct_answer is computed server-side
     """
     round_id: int = Field(ge=1)
     grid_id: int = Field(ge=1)
     correct_answer: bool = False
     skip_answer: bool = False
+    
+    # For matching questions
+    player_matching_pairs: Optional[List[PlayerMatchingPair]] = None
 
 
 class AnswerCreateOut(BaseModel):
@@ -198,6 +212,10 @@ class AnswerCreateOut(BaseModel):
     round_id: int
     correct_answer: bool
     skip_answer: bool
+
+    # For matching questions validation results
+    player_matching_pairs: Optional[List[PlayerMatchingPair]] = None
+    expected_matching_pairs: Optional[List[PlayerMatchingPair]] = None
 
     # si auto_next_round=true, on peut renvoyer le round créé
     next_round: Optional[RoundCreateOut] = None
