@@ -201,6 +201,7 @@ def get_question_service(
     audio_svc: AudioService = Depends(get_audio_service),
     video_svc: VideoService = Depends(get_video_service),
     grid_repo: GridRepository = Depends(get_grid_repository),
+    game_repo: GameRepository = Depends(get_game_repository),
     matching_element_repo: MatchingElementRepository = Depends(get_matching_element_repository),
     matching_correct_pair_repo: MatchingCorrectPairRepository = Depends(get_matching_correct_pair_repository),
 ) -> QuestionService:
@@ -211,6 +212,7 @@ def get_question_service(
         audio_svc=audio_svc,
         video_svc=video_svc,
         grid_repo=grid_repo,
+        game_repo=game_repo,
         matching_element_repo=matching_element_repo,
         matching_correct_pair_repo=matching_correct_pair_repo,
     )

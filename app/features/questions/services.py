@@ -3,6 +3,7 @@ from typing import Optional, Sequence, Tuple, Any, Dict
 from app.db.repositories.questions import QuestionRepository
 from app.db.repositories.themes import ThemeRepository
 from app.db.repositories.grids import GridRepository
+from app.db.repositories.games import GameRepository
 from app.db.repositories.matching_elements import MatchingElementRepository
 from app.db.repositories.matching_correct_pairs import MatchingCorrectPairRepository
 
@@ -33,6 +34,7 @@ class QuestionService:
         audio_svc: AudioService,
         video_svc: VideoService,
         grid_repo: GridRepository,
+        game_repo: GameRepository,
         matching_element_repo: MatchingElementRepository,
         matching_correct_pair_repo: MatchingCorrectPairRepository,
     ):
@@ -42,6 +44,7 @@ class QuestionService:
         self.audio_svc = audio_svc
         self.video_svc = video_svc
         self.grid_repo = grid_repo
+        self.game_repo = game_repo
         self.matching_element_repo = matching_element_repo
         self.matching_correct_pair_repo = matching_correct_pair_repo
 
@@ -198,15 +201,27 @@ class QuestionService:
         if owner_id != user_id:
             raise PermissionError("FORBIDDEN")
 
-    def _can_sign_media_for_theme(self, theme: Any, user_ctx: Optional[Tuple[int, bool]]) -> bool:
+    def _can_sign_media_for_theme(
+        self, theme: Any, user_ctx: Optional[Tuple[int, bool]], game_url: Optional[str] = None
+    ) -> bool:
         """
-        IMPORTANT: adapte à ThemeService._can_sign_media_for_theme si tu l'as déjà.
+        Vérifie si l'utilisateur peut signer les URLs des médias.
+        - Si game_url fourni, autorise si user est owner de cette partie
+        - Sinon, autorise si user est owner du thème ou admin
         """
         if not user_ctx:
             return False
         user_id, is_admin = user_ctx
         if is_admin:
             return True
+        
+        # Si game_url fourni, vérifier si user est owner de cette game
+        if game_url:
+            game = self.game_repo.get_by_url(game_url)
+            if game and (game.owner_id == user_id or is_admin):
+                return True
+        
+        # Fallback: vérifier ownership du thème
         owner_id = getattr(theme, "owner_id", None)
         return owner_id == user_id
 
@@ -216,6 +231,7 @@ class QuestionService:
         user_ctx: Optional[Tuple[int, bool]],
         *,
         with_signed_url: bool,
+        game_url: Optional[str] = None,
     ) -> QuestionJoinWithSignedUrlOut:
         # 1) question
         q = self.repo.get(question_id)
@@ -228,8 +244,10 @@ class QuestionService:
             raise LookupError("Theme not found.")
         self._assert_can_view(user_ctx, theme)
 
-        # 3) autorisation de signer
-        allow_sign = with_signed_url and self._can_sign_media_for_theme(theme, user_ctx)
+        # 3) autorisation de signer (avec game_url si fourni)
+        allow_sign = with_signed_url and self._can_sign_media_for_theme(
+            theme, user_ctx, game_url=game_url
+        )
 
         # 4) signed urls (si demandé et autorisé)
         # images
