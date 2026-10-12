@@ -332,6 +332,8 @@ class ThemeService:
                     answer_audio_id=q_in.answer_audio_id,
                     question_video_id=q_in.question_video_id,
                     answer_video_id=q_in.answer_video_id,
+                    randomize_on_play=q_in.randomize_on_play if q_in.randomize_on_play is not None else False,
+                    custom_display_order=q_in.custom_display_order,
                 )
             )
 
@@ -562,6 +564,9 @@ class ThemeService:
                     
                     matching_elements=matching_elements_out,
                     matching_correct_pairs=matching_correct_pairs_out,
+
+                    randomize_on_play=q.randomize_on_play,
+                    custom_display_order=q.custom_display_order,
 
                     created_at=getattr(q, "created_at", None),
                     updated_at=getattr(q, "updated_at", None),

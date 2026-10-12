@@ -1,4 +1,4 @@
-from typing import Optional, Literal, List
+from typing import Optional, Literal, List, Any
 from datetime import datetime
 from pydantic import BaseModel, Field as PydField, field_validator, model_validator
 
@@ -95,6 +95,10 @@ class QuestionCreateIn(BaseModel):
     matching_elements: Optional[List[MatchingElementIn]] = None
     matching_correct_pairs: Optional[List[MatchingCorrectPairIn]] = None
 
+    # Options d'affichage pour questions matching
+    randomize_on_play: bool = PydField(default=False, description="Mélanger les éléments lors du jeu")
+    custom_display_order: Optional[Any] = PydField(default=None, description="Ordre d'affichage personnalisé [[pos, ...], ...]")
+
     @model_validator(mode='after')
     def validate_question_type_fields(self):
         """Valide que les bons champs sont fournis selon le type de question."""
@@ -180,6 +184,10 @@ class QuestionUpdateIn(BaseModel):
     matching_elements: Optional[List[MatchingElementIn]] = None
     matching_correct_pairs: Optional[List[MatchingCorrectPairIn]] = None
 
+    # Options d'affichage pour questions matching
+    randomize_on_play: Optional[bool] = None
+    custom_display_order: Optional[Any] = None
+
 
 class QuestionOut(BaseModel):
     id: int
@@ -203,6 +211,10 @@ class QuestionOut(BaseModel):
     # Champs pour questions matching
     matching_elements: List[MatchingElementOut] = []
     matching_correct_pairs: List[MatchingCorrectPairOut] = []
+
+    # Options d'affichage pour questions matching
+    randomize_on_play: bool = False
+    custom_display_order: Optional[Any] = None
 
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None

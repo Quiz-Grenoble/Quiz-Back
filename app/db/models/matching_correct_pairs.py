@@ -10,6 +10,7 @@ from .base import BaseModelDB
 
 
 class MatchingCorrectPair(BaseModelDB, table=True):
+    __tablename__ = "matching_correct_pair"
     """
     Paires correctes pour une question de type matching.
     Définit les associations attendues entre éléments de différentes listes.

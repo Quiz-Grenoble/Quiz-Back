@@ -380,6 +380,9 @@ class QuestionService:
             matching_elements=matching_elements_out,
             matching_correct_pairs=matching_correct_pairs_out,
 
+            randomize_on_play=q.randomize_on_play,
+            custom_display_order=q.custom_display_order,
+
             created_at=getattr(q, "created_at", None),
             updated_at=getattr(q, "updated_at", None),
             positive_answers_count=pos,

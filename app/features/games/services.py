@@ -1048,9 +1048,9 @@ class GameService:
         expected_pairs_out = None
 
         question = self.questions.get(grid.question_id)
-        if question and question.question_type == "matching":
-            if not payload.player_matching_pairs:
-                raise ValueError("player_matching_pairs required for matching questions")
+        if question and question.question_type == "matching" and payload.player_matching_pairs:
+            # Server-side validation only when pairs are provided
+            # If not provided, correct_answer from the payload is used as-is (host's manual decision)
 
             # Get correct pairs from question
             from app.db.repositories.matching_correct_pairs import MatchingCorrectPairRepository

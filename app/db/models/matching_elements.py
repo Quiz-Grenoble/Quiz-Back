@@ -12,6 +12,7 @@ from .base import BaseModelDB
 
 
 class MatchingElement(BaseModelDB, table=True):
+    __tablename__ = "matching_element"
     """
     Éléments d'une question de type matching.
     Chaque élément appartient à une liste (list_index) et a une position dans cette liste.

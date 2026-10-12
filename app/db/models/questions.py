@@ -1,6 +1,6 @@
-from typing import Optional, List
+from typing import Optional, List, Any
 from sqlmodel import Field, Relationship
-from sqlalchemy import Column, ForeignKey, Integer
+from sqlalchemy import Column, ForeignKey, Integer, JSON as SAJson
 
 from .base import BaseModelDB
 
@@ -44,6 +44,14 @@ class Question(BaseModelDB, table=True):
     # Videos optionnelles
     question_video_id: Optional[int] = Field(default=None, foreign_key="video.id")
     answer_video_id: Optional[int] = Field(default=None, foreign_key="video.id")
+
+    # Options d'affichage pour questions de type matching
+    randomize_on_play: bool = Field(default=False, description="Mélanger les éléments lors du jeu")
+    custom_display_order: Optional[Any] = Field(
+        default=None,
+        sa_column=Column(SAJson, nullable=True),
+        description="Ordre d'affichage personnalisé par liste [[pos, ...], ...]"
+    )
 
     # Relations pour questions de type matching
     matching_elements: List["MatchingElement"] = Relationship(
