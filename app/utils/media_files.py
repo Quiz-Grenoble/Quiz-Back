@@ -5,7 +5,7 @@ import filetype
 
 
 # Allow-lists (ajuste selon tes besoins)
-ALLOWED_IMAGE_MIME: Set[str] = {"image/jpeg", "image/png", "image/webp", "image/avif"}
+ALLOWED_IMAGE_MIME: Set[str] = {"image/jpeg", "image/png", "image/webp", "image/avif", "image/gif"}
 
 ALLOWED_AUDIO_MIME: Set[str] = {
     "audio/mpeg",      # mp3
