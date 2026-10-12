@@ -6,5 +6,4 @@ minio-data/
 app/db/docs/
 data/
 *.zip
-migrations/
 .vscode/

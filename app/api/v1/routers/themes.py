@@ -271,6 +271,9 @@ def update(
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden")
     except LookupError:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not Found")
+    except ValueError as e:
+        # Validation errors from question validation → 422 (Unprocessable Entity)
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(e))
 
 
 # -----------------------------

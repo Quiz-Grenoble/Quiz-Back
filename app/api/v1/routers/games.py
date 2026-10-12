@@ -223,6 +223,8 @@ def answer(
             round_id=grid.round_id,
             correct_answer=grid.correct_answer,
             skip_answer=grid.skip_answer,
+            player_matching_pairs=getattr(grid, "player_matching_pairs", None),
+            expected_matching_pairs=getattr(grid, "expected_matching_pairs", None),
             next_round=(
                 RoundCreateOut(id=next_round.id, player_id=next_round.player_id, round_number=next_round.round_number)
                 if next_round
@@ -264,6 +266,10 @@ def get_question_by_id(
         False,
         description="Si true, inclut des signed URLs si l'utilisateur est autorisé",
     ),
+    game_url: Optional[str] = Query(
+        None,
+        description="URL de la partie (si fourni, autorise le proprio de la partie à voir les médias)",
+    ),
     access_token: str = Depends(get_access_token_from_bearer),
     auth_svc: AuthService = Depends(get_auth_service),
     svc: QuestionService = Depends(get_question_service),
@@ -273,7 +279,9 @@ def get_question_by_id(
     user_ctx = (user_id, is_admin)
 
     try:
-        return svc.get_one_detail(question_id, user_ctx, with_signed_url=with_signed_url)
+        return svc.get_one_detail(
+            question_id, user_ctx, with_signed_url=with_signed_url, game_url=game_url
+        )
     except LookupError:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Question not found")
     except PermissionError:
