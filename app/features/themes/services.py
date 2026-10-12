@@ -312,12 +312,20 @@ class ThemeService:
         new_questions: List[Question] = []
         for idx, q_in in enumerate(payload.questions):
             # Validation: question requise pour tous les types
-            if not q_in.question:
-                raise ValueError(f"Each question must provide 'question'. Invalid item at index {idx}.")
+            if not q_in.question or len(q_in.question.strip()) == 0:
+                raise ValueError(f"Question #{idx + 1}: Le texte de la question est obligatoire.")
             
             # Validation: answer requise seulement pour les questions classic
-            if q_in.question_type != "matching" and not q_in.answer:
-                raise ValueError(f"Classic questions must provide 'answer'. Invalid item at index {idx}.")
+            if q_in.question_type != "matching":
+                if not q_in.answer or len(q_in.answer.strip()) == 0:
+                    raise ValueError(f"Question #{idx + 1}: Le champ 'answer' est requis pour une question classique.")
+            
+            # Validation: matching data requise pour les questions matching
+            if q_in.question_type == "matching":
+                if not q_in.matching_elements or len(q_in.matching_elements) == 0:
+                    raise ValueError(f"Question #{idx + 1}: Les éléments de matching sont requis pour une question de type matching.")
+                if not q_in.matching_correct_pairs or len(q_in.matching_correct_pairs) == 0:
+                    raise ValueError(f"Question #{idx + 1}: Les paires correctes de matching sont requises pour une question de type matching.")
 
             new_questions.append(
                 Question(
